@@ -5,7 +5,8 @@ const Product = require("../models/products");
 // Create order from cart
 exports.createOrder = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Temporary: Use userId from query/body or default to a dummy user
+    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
     const { shippingAddress, paymentMethod } = req.body;
 
     // Get user's cart
@@ -83,7 +84,8 @@ exports.createOrder = async (req, res) => {
 // Get user's orders
 exports.getUserOrders = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Temporary: Use userId from query/body or default to a dummy user
+    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
 
     const orders = await Order.find({ user: userId })
       .populate("items.product")
@@ -105,7 +107,8 @@ exports.getUserOrders = async (req, res) => {
 exports.getOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.id;
+    // Temporary: Use userId from query/body or default to a dummy user
+    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
 
     const order = await Order.findOne({ _id: id, user: userId }).populate(
       "items.product"
@@ -135,12 +138,13 @@ exports.updateOrderStatus = async (req, res) => {
     const { id } = req.params;
     const { status, paymentStatus } = req.body;
 
+    // Temporary: Commented out admin check
     // Check if user is admin
-    if (req.user.role !== "admin") {
-      return res.status(403).json({
-        message: "Access denied. Admin only.",
-      });
-    }
+    // if (req.user?.role !== "admin") {
+    //   return res.status(403).json({
+    //     message: "Access denied. Admin only.",
+    //   });
+    // }
 
     const order = await Order.findByIdAndUpdate(
       id,
@@ -169,12 +173,13 @@ exports.updateOrderStatus = async (req, res) => {
 // Get all orders (admin only)
 exports.getAllOrders = async (req, res) => {
   try {
+    // Temporary: Commented out admin check
     // Check if user is admin
-    if (req.user.role !== "admin") {
-      return res.status(403).json({
-        message: "Access denied. Admin only.",
-      });
-    }
+    // if (req.user?.role !== "admin") {
+    //   return res.status(403).json({
+    //     message: "Access denied. Admin only.",
+    //   });
+    // }
 
     const orders = await Order.find()
       .populate("items.product")

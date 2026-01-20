@@ -25,11 +25,14 @@ exports.createCategory = async (req, res) => {
 exports.getCategories = async (req, res) => {
   try {
     const categories = await Category.find();
+    console.log(`Found ${categories.length} categories`);
     return res.status(200).json({
       message: "Categories fetched successfully",
-      data: categories
+      data: categories,
+      count: categories.length
     });
   } catch (error) {
+    console.error("Error fetching categories:", error);
     return res.status(500).json({
       message: "internal server error",
       error: error.message

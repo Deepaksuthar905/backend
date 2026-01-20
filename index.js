@@ -26,6 +26,12 @@ app.use("/api", categoryRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 
+// Direct routes without /api prefix for convenience
+const { getCategories } = require("./controllers/categoryController");
+const { getProducts } = require("./controllers/productController");
+app.get("/categories", getCategories);
+app.get("/products", getProducts);
+
 // 404 Handler
 app.use((req, res) => {
   res.status(404).json({

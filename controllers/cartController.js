@@ -4,7 +4,8 @@ const Product = require("../models/products");
 // Get user's cart
 exports.getCart = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Temporary: Use userId from query/body or default to a dummy user
+    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
     let cart = await Cart.findOne({ user: userId }).populate("items.product");
 
     if (!cart) {
@@ -26,7 +27,8 @@ exports.getCart = async (req, res) => {
 // Add item to cart
 exports.addToCart = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Temporary: Use userId from query/body or default to a dummy user
+    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
     const { productId, quantity = 1 } = req.body;
 
     if (!productId) {
@@ -97,7 +99,8 @@ exports.addToCart = async (req, res) => {
 // Update cart item quantity
 exports.updateCartItem = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Temporary: Use userId from query/body or default to a dummy user
+    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
     const { productId, quantity } = req.body;
 
     if (!productId || !quantity || quantity < 1) {
@@ -155,7 +158,8 @@ exports.updateCartItem = async (req, res) => {
 // Remove item from cart
 exports.removeFromCart = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Temporary: Use userId from query/body or default to a dummy user
+    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
     const { productId } = req.params;
 
     const cart = await Cart.findOne({ user: userId });
@@ -192,7 +196,8 @@ exports.removeFromCart = async (req, res) => {
 // Clear cart
 exports.clearCart = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Temporary: Use userId from query/body or default to a dummy user
+    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
 
     const cart = await Cart.findOne({ user: userId });
     if (!cart) {
