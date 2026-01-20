@@ -1,49 +1,33 @@
-module.exports = (sequelize, DataTypes) => {
-  const User = sequelize.define(
-    "users", // table name (plural is best practice)
-    {
-      id: {
-        type: DataTypes.INTEGER,
-        primaryKey: true,
-        autoIncrement: true,
-        allowNull: false,
-      },
+const mongoose = require("mongoose");
 
-      name: {
-        type: DataTypes.STRING(100),
-        allowNull: false,
-      },
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    maxlength: 100
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    maxlength: 150,
+    match: [/.+\@.+\..+/, 'Please fill a valid email address']
+  },
+  password: {
+    type: String,
+    required: true
+  },
+  phone: {
+    type: String,
+    maxlength: 15
+  },
+  role: {
+    type: String,
+    enum: ["admin", "customer"],
+    default: "customer"
+  }
+}, {
+  timestamps: { createdAt: "created_at", updatedAt: "updated_at" }
+});
 
-      email: {
-        type: DataTypes.STRING(150),
-        allowNull: false,
-        unique: true,
-        validate: {
-          isEmail: true,
-        },
-      },
-
-      password: {
-        type: DataTypes.STRING,
-        allowNull: false,
-      },
-
-      phone: {
-        type: DataTypes.STRING(15),
-        allowNull: true,
-      },
-
-      role: {
-        type: DataTypes.ENUM("admin", "customer"),
-        defaultValue: "customer",
-      },
-    },
-    {
-      timestamps: true,
-      createdAt: "created_at",
-      updatedAt: "updated_at",
-    }
-  );
-
-  return User;
-};
+module.exports = mongoose.model("User", userSchema);
