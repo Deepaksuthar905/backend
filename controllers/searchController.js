@@ -1,5 +1,5 @@
 const Product = require("../models/products");
-const Category = require("../models/category");
+const Category = require("../models/Category");
 
 // Search products and categories
 exports.search = async (req, res) => {
