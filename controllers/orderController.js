@@ -6,7 +6,7 @@ const Product = require("../models/products");
 exports.createOrder = async (req, res) => {
   try {
     // Temporary: Use userId from query/body or default to a dummy user
-    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
+    const userId = req.user?.id || req.body?.userId || req.query?.userId || "000000000000000000000000";
     const { shippingAddress, paymentMethod } = req.body;
 
     // Get user's cart
@@ -85,7 +85,7 @@ exports.createOrder = async (req, res) => {
 exports.getUserOrders = async (req, res) => {
   try {
     // Temporary: Use userId from query/body or default to a dummy user
-    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
+    const userId = req.user?.id || req.body?.userId || req.query?.userId || "000000000000000000000000";
 
     const orders = await Order.find({ user: userId })
       .populate("items.product")
@@ -108,7 +108,7 @@ exports.getOrder = async (req, res) => {
   try {
     const { id } = req.params;
     // Temporary: Use userId from query/body or default to a dummy user
-    const userId = req.user?.id || req.body.userId || req.query.userId || "000000000000000000000000";
+    const userId = req.user?.id || req.body?.userId || req.query?.userId || "000000000000000000000000";
 
     const order = await Order.findOne({ _id: id, user: userId }).populate(
       "items.product"
