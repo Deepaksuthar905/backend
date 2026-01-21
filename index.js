@@ -21,12 +21,14 @@ const auth = require("./routes/auth");
 const cartRoutes = require("./routes/cart");
 const orderRoutes = require("./routes/orders");
 const addressRoutes = require("./routes/address");
+const wishlistRoutes = require("./routes/wishlist");
 
 app.use("/", auth);
 app.use("/api", categoryRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/address", addressRoutes);
+app.use("/api/wishlist", wishlistRoutes);
 
 // Direct routes without /api prefix for convenience
 const { getCategories } = require("./controllers/categoryController");
