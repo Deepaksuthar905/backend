@@ -31,7 +31,13 @@ exports.register = async (req, res) => {
       phone,
     });
 
-    res.json({ message: "User created", user });
+    // Generate token for auto-login after registration
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET || "default_secret_key_change_in_production"
+    );
+
+    res.json({ message: "User created and logged in", token, user: { id: user._id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error("Registration error:", err);
     res.status(500).json({ 
