@@ -9,7 +9,7 @@ const { createProduct } = require("../controllers/productController");
 const { getProducts } = require("../controllers/productController");
 const { deleteProduct } = require("../controllers/productController");
 const { updateProduct } = require("../controllers/productController");
-const { getProductById } = require("../controllers/productController");
+const { getProductById, getProductsByCategory } = require("../controllers/productController");
 //category related routes
 // router.post("/category/create", verifyToken, createCategory);
 router.post("/category/create", createCategory);
@@ -28,4 +28,5 @@ router.delete("/product/delete/:id", deleteProduct);
 // router.put("/product/update/:id", verifyToken, updateProduct);
 router.put("/product/update/:id", updateProduct);
 router.get("/product/:id", getProductById);
+router.get("/products/category/:categoryId", getProductsByCategory);
 module.exports = router;
