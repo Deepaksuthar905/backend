@@ -17,7 +17,7 @@ exports.createProduct = async (req, res) => {
 
 exports.getProducts = async (req, res) => {
   try {
-    const products = await Product.find().populate("category");
+    const products = await Product.find().populate("category").populate("subcategory");
     return res.status(200).json({
       message: "Products fetched successfully",
       data: products,
@@ -92,7 +92,7 @@ exports.getProductById = async (req, res) => {
 
 exports.getProductsByCategory = async (req, res) => {
   try {
-    const products = await Product.find({ category: req.params.categoryId }).populate("category");
+    const products = await Product.find({ category: req.params.categoryId }).populate("category").populate("subcategory");
     if (products.length === 0) {
       return res.status(404).json({
         message: "Products not found for this category",
@@ -104,6 +104,26 @@ exports.getProductsByCategory = async (req, res) => {
     });
   }
   catch (error) {
+    return res.status(500).json({
+      message: "internal server error",
+      error: error.message,
+    });
+  }
+};
+
+exports.getProductsBySubcategory = async (req, res) => {
+  try {
+    const products = await Product.find({ subcategory: req.params.subcategoryId }).populate("category").populate("subcategory");
+    if (products.length === 0) {
+      return res.status(404).json({
+        message: "Products not found for this subcategory",
+      });
+    }
+    return res.status(200).json({
+      message: "Products fetched successfully",
+      data: products,
+    });
+  } catch (error) {
     return res.status(500).json({
       message: "internal server error",
       error: error.message,
