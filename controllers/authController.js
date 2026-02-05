@@ -1,6 +1,7 @@
 const User = require("../models/user");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const { sendOtpMail } = require("../utils/sendOtpMail");
 
 exports.register = async (req, res) => {
   try {
@@ -75,6 +76,95 @@ exports.login = async (req, res) => {
     res.status(500).json({ 
       message: "Internal server error",
       error: err.message 
+    });
+  }
+};
+
+// --- Forgot Password: generate 4-digit OTP and send to email ---
+function generateOtp() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+const OTP_VALID_MS = 10 * 60 * 1000; // 10 minutes
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "No account found with this email" });
+    }
+
+    const otp = generateOtp();
+    user.otp = otp;
+    user.otpExpiry = new Date(Date.now() + OTP_VALID_MS);
+    await user.save();
+
+    await sendOtpMail(email, otp);
+
+    res.status(200).json({
+      success: true,
+      message: "OTP sent to your email. Valid for 10 minutes.",
+    });
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    res.status(500).json({
+      message: "Internal server error",
+      error: err.message,
+    });
+  }
+};
+
+// --- Reset Password: verify OTP and update password ---
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        message: "Email, OTP and newPassword are required",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters long",
+      });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "No account found with this email" });
+    }
+
+    if (!user.otp || user.otp !== String(otp)) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    if (!user.otpExpiry || new Date() > user.otpExpiry) {
+      user.otp = null;
+      user.otpExpiry = null;
+      await user.save();
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    user.password = hashed;
+    user.otp = null;
+    user.otpExpiry = null;
+    await user.save();
+
+    res.status(200).json({ message: "Password updated successfully" });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({
+      message: "Internal server error",
+      error: err.message,
     });
   }
 };

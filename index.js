@@ -26,6 +26,7 @@ const wishlistRoutes = require("./routes/wishlist");
 const searchRoutes = require("./routes/search");
 
 app.use("/", auth);
+app.use("/api", auth);
 app.use("/api", categoryRoutes);
 app.use("/api", subcategoryRoutes);
 app.use("/api/cart", cartRoutes);
