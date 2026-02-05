@@ -1,5 +1,6 @@
 const Subcategory = require("../models/subcategory");
 const Category = require("../models/Category");
+const Product = require("../models/products");
 
 exports.createSubcategory = async (req, res) => {
   try {
@@ -73,9 +74,15 @@ exports.getSubcategoryById = async (req, res) => {
     if (!subcategory) {
       return res.status(404).json({ message: "Subcategory not found" });
     }
+    // All products that have this subcategory
+    const products = await Product.find({ subcategory: req.params.id })
+      .populate("category")
+      .populate("subcategory");
     return res.status(200).json({
       message: "Subcategory fetched successfully",
       data: subcategory,
+      products,
+      count: products.length,
     });
   } catch (error) {
     return res.status(500).json({

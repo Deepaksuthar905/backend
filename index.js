@@ -4,10 +4,18 @@ const app = express();
 const mongoose = require("mongoose");
 const cors = require("cors");
 
-// Middleware
-app.use(cors());
+// CORS - allow frontend (change origin in .env if needed)
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || true, // true = reflect request origin; or set e.g. "http://localhost:5173"
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Serve uploaded files (e.g. payment screenshots)
+app.use("/uploads", express.static("uploads"));
 
 // DB connection
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/mydb";
