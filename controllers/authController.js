@@ -70,7 +70,16 @@ exports.login = async (req, res) => {
       process.env.JWT_SECRET || "default_secret_key_change_in_production"
     );
 
-    res.json({ message: "Logged in", token });
+    res.json({
+      message: "Logged in",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ 
@@ -162,6 +171,71 @@ exports.resetPassword = async (req, res) => {
     res.status(200).json({ message: "Password updated successfully" });
   } catch (err) {
     console.error("Reset password error:", err);
+    res.status(500).json({
+      message: "Internal server error",
+      error: err.message,
+    });
+  }
+};
+
+// --- Current user (for manage panel: check if admin) ---
+exports.getMe = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    const user = await User.findById(userId).select("-password -otp -otpExpiry").lean();
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.json({
+      message: "User fetched successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    console.error("Get me error:", err);
+    res.status(500).json({
+      message: "Internal server error",
+      error: err.message,
+    });
+  }
+};
+
+
+exports.users = async (req, res) => {
+  try {
+    const users = await User.find().select("-password -otp -otpExpiry").lean();
+    res.json({
+      message: "Users fetched successfully",
+      users,
+    });
+  } catch (err) {
+    console.error("Users error:", err);
+    res.status(500).json({
+      message: "Internal server error",
+      error: err.message,
+    });
+  }
+};
+
+exports.deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findByIdAndDelete(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.json({
+      message: "User deleted successfully",
+    });
+  } catch (err) {
+    console.error("Delete user error:", err);
     res.status(500).json({
       message: "Internal server error",
       error: err.message,
