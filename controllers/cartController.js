@@ -2,6 +2,22 @@ const mongoose = require("mongoose");
 const Cart = require("../models/cart");
 const Product = require("../models/products");
 
+// Cart response mein har item ke product ki sizes = sirf selected size
+function cartForResponse(cart) {
+  if (!cart) return cart;
+  const doc = cart.toObject ? cart.toObject() : cart;
+  if (Array.isArray(doc.items)) {
+    doc.items = doc.items.map((item) => {
+      const selected = item.selectedSize;
+      if (item.product && selected != null && selected !== "") {
+        item.product = { ...item.product, sizes: [{ name: String(selected) }] };
+      }
+      return item;
+    });
+  }
+  return doc;
+}
+
 // Get user's cart
 exports.getCart = async (req, res) => {
   try {
@@ -15,7 +31,7 @@ exports.getCart = async (req, res) => {
 
     return res.status(200).json({
       message: "Cart fetched successfully",
-      data: cart,
+      data: cartForResponse(cart),
     });
   } catch (error) {
     return res.status(500).json({
@@ -25,10 +41,19 @@ exports.getCart = async (req, res) => {
   }
 };
 
-// Add item to cart
+// Add item to cart (selectedSize / size = jo size user ne choose ki, e.g. "3" ya { name: "3", id: "..." })
+function getSelectedSizeFromBody(body) {
+  const raw = body.selectedSize != null ? body.selectedSize : body.size;
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "object" && raw !== null) {
+    const v = raw.name || raw.id || raw.value || "";
+    return String(v).trim() || null;
+  }
+  return String(raw).trim() || null;
+}
+
 exports.addToCart = async (req, res) => {
   try {
-    // Temporary: Use userId from query/body or default to a dummy user
     const userId = req.user?.id || req.body?.userId || req.query?.userId || "000000000000000000000000";
     const { productId, quantity = 1 } = req.body;
 
@@ -38,7 +63,6 @@ exports.addToCart = async (req, res) => {
       });
     }
 
-    // Check if product exists
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({
@@ -46,7 +70,6 @@ exports.addToCart = async (req, res) => {
       });
     }
 
-    // Check stock availability
     if (product.stock < quantity) {
       return res.status(400).json({
         message: "Insufficient stock",
@@ -59,24 +82,24 @@ exports.addToCart = async (req, res) => {
       cart = await Cart.create({ user: userId, items: [], total: 0 });
     }
 
-    // Check if product already in cart
-    const existingItemIndex = cart.items.findIndex(
-      (item) => item.product.toString() === productId
-    );
+    const sizeStr = getSelectedSizeFromBody(req.body);
+    const existingItemIndex = cart.items.findIndex((item) => {
+      const sameProduct = item.product.toString() === String(productId);
+      const sameSize = (item.selectedSize || "") === (sizeStr || "");
+      return sameProduct && sameSize;
+    });
 
     if (existingItemIndex > -1) {
-      // Update quantity
       cart.items[existingItemIndex].quantity += quantity;
     } else {
-      // Add new item
       cart.items.push({
         product: productId,
         quantity: quantity,
         price: product.price,
+        selectedSize: sizeStr || undefined,
       });
     }
 
-    // Calculate total
     cart.total = cart.items.reduce(
       (sum, item) => sum + item.price * item.quantity,
       0
@@ -87,7 +110,7 @@ exports.addToCart = async (req, res) => {
 
     return res.status(200).json({
       message: "Item added to cart successfully",
-      data: cart,
+      data: cartForResponse(cart),
     });
   } catch (error) {
     return res.status(500).json({
@@ -146,7 +169,7 @@ exports.updateCartItem = async (req, res) => {
 
     return res.status(200).json({
       message: "Cart updated successfully",
-      data: cart,
+      data: cartForResponse(cart),
     });
   } catch (error) {
     return res.status(500).json({
@@ -203,7 +226,7 @@ exports.removeFromCart = async (req, res) => {
 
     return res.status(200).json({
       message: removed ? "Item removed from cart successfully" : "Item not found in cart",
-      data: cart,
+      data: cartForResponse(cart),
     });
   } catch (error) {
     return res.status(500).json({
@@ -233,7 +256,7 @@ exports.clearCart = async (req, res) => {
 
     return res.status(200).json({
       message: "Cart cleared successfully",
-      data: cart,
+      data: cartForResponse(cart),
     });
   } catch (error) {
     return res.status(500).json({

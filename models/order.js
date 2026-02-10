@@ -23,6 +23,10 @@ const OrderSchema = new mongoose.Schema(
           type: Number,
           required: true,
         },
+        selectedSize: {
+          type: String,
+          default: null,
+        },
       },
     ],
     total: {
