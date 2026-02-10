@@ -37,8 +37,9 @@ const ProductSchema = new mongoose.Schema(
 
     sizes: [
       {
-        label: String,        // e.g. "12 x 8 inch"
-        value: String         // e.g. "12x8"
+        name: { type: String, default: "" }, 
+        id: { type: String, required: true },  
+        productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", default: null },  // ye size kis product ki
       }
     ],
 

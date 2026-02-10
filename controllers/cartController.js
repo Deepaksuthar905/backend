@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Cart = require("../models/cart");
 const Product = require("../models/products");
 
@@ -155,23 +156,42 @@ exports.updateCartItem = async (req, res) => {
   }
 };
 
-// Remove item from cart
+// Remove item from cart (productId = product _id ya cart item _id dono chalega)
 exports.removeFromCart = async (req, res) => {
   try {
-    // Temporary: Use userId from query/body or default to a dummy user
     const userId = req.user?.id || req.body?.userId || req.query?.userId || "000000000000000000000000";
-    const { productId } = req.params;
+    const productId = (req.params.productId || req.query.productId || "").trim();
+    if (!productId) {
+      return res.status(400).json({ message: "Product ID is required" });
+    }
 
-    const cart = await Cart.findOne({ user: userId });
+    const cart = await Cart.findOne({ user: String(userId) });
     if (!cart) {
       return res.status(404).json({
         message: "Cart not found",
       });
     }
 
-    cart.items = cart.items.filter(
-      (item) => item.product.toString() !== productId
-    );
+    const pid = String(productId).trim();
+    const beforeCount = cart.items.length;
+    let pidObj;
+    try {
+      pidObj = new mongoose.Types.ObjectId(pid);
+    } catch (e) {
+      pidObj = null;
+    }
+    cart.items = cart.items.filter((item) => {
+      const productIdStr = item.product && (item.product._id != null ? String(item.product._id) : String(item.product));
+      const cartItemIdStr = item._id != null ? String(item._id) : "";
+      if (productIdStr === pid || cartItemIdStr === pid) return false;
+      if (pidObj && item.product) {
+        const itemProdId = item.product._id || item.product;
+        if (mongoose.Types.ObjectId.isValid(itemProdId) && pidObj.equals(itemProdId)) return false;
+      }
+      if (pidObj && item._id && pidObj.equals(item._id)) return false;
+      return true;
+    });
+    const removed = beforeCount > cart.items.length;
 
     cart.total = cart.items.reduce(
       (sum, item) => sum + item.price * item.quantity,
@@ -182,7 +202,7 @@ exports.removeFromCart = async (req, res) => {
     await cart.populate("items.product");
 
     return res.status(200).json({
-      message: "Item removed from cart successfully",
+      message: removed ? "Item removed from cart successfully" : "Item not found in cart",
       data: cart,
     });
   } catch (error) {
