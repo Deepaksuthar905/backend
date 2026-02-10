@@ -242,3 +242,18 @@ exports.deleteUser = async (req, res) => {
     });
   }
 };
+
+exports.updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, phone,role } = req.body;
+    const user = await User.findByIdAndUpdate(id, { name, email, phone,role }, { new: true });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.json({ message: "User updated successfully", user });
+  } catch (err) {
+    console.error("Update user error:", err);
+    res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+};
