@@ -5,7 +5,7 @@ const { sendOtpMail } = require("../utils/sendOtpMail");
 
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, phone } = req.body;
+    const { name, email, password, phone } = req.body || {};
 
     // Input validation
     if (!name || !email || !password) {
@@ -50,7 +50,7 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
     // Input validation
     if (!email || !password) {
@@ -98,7 +98,7 @@ const OTP_VALID_MS = 10 * 60 * 1000; // 10 minutes
 
 exports.forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email } = req.body || {};
 
     if (!email) {
       return res.status(400).json({ message: "Email is required" });
@@ -132,7 +132,7 @@ exports.forgotPassword = async (req, res) => {
 // --- Reset Password: verify OTP and update password ---
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, otp, newPassword } = req.body;
+    const { email, otp, newPassword } = req.body || {};
 
     if (!email || !otp || !newPassword) {
       return res.status(400).json({

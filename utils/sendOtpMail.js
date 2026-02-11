@@ -1,10 +1,7 @@
 // Optional: nodemailer - if not installed, OTP is only logged to console
-let nodemailer;
-try {
+
   nodemailer = require("nodemailer");
-} catch (e) {
-  nodemailer = null;
-}
++require("dotenv").config(); 
 
 /**
  * Sends 4-digit OTP to email.
