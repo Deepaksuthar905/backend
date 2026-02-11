@@ -2,11 +2,50 @@ const Order = require("../models/order");
 const Cart = require("../models/cart");
 const Product = require("../models/products");
 
-// Create order from cart OR from request body (items)
+// Response mein har item ke product.sizes = sirf selected size
+function orderForResponse(order) {
+  if (!order) return order;
+  const doc = order.toObject ? order.toObject() : order;
+  if (Array.isArray(doc.items)) {
+    doc.items = doc.items.map((item) => {
+      const selected = item.selectedSize;
+      const hasSize = selected != null && selected !== "" && String(selected).trim() !== "";
+      if (item.product && hasSize) {
+        item.product = { ...item.product, sizes: [{ name: String(selected).trim() }] };
+      }
+      return item;
+    });
+  }
+  return doc;
+}
+
+// Item se size nikaalo – selectedSize ya size (string ya object { name, id })
+function getSelectedSizeFromItem(item) {
+  const raw = item.selectedSize != null ? item.selectedSize : item.size;
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "object" && raw !== null) {
+    const v = raw.name || raw.id || raw.value || "";
+    return String(v).trim() || null;
+  }
+  return String(raw).trim() || null;
+}
+
+// Create order from cart OR from request body (items) OR order now (top-level product, quantity, price, size)
 exports.createOrder = async (req, res) => {
   try {
     const userId = req.user?.id || req.body?.user || req.body?.userId || req.query?.userId || "000000000000000000000000";
-    const { shippingAddress, paymentMethod, paymentScreenshot, items: bodyItems, total: bodyTotal } = req.body;
+    let { shippingAddress, paymentMethod, paymentScreenshot, items: bodyItems, total: bodyTotal } = req.body;
+
+    // Order now: agar items array nahi hai lekin top-level product + quantity hai to ek item banao
+    if ((!bodyItems || !Array.isArray(bodyItems) || bodyItems.length === 0) && req.body.product && req.body.quantity != null) {
+      bodyItems = [{
+        product: req.body.product,
+        quantity: req.body.quantity,
+        price: req.body.price,
+        size: req.body.size,
+        selectedSize: req.body.selectedSize,
+      }];
+    }
 
     let orderItems = [];
     let total = 0;
@@ -31,10 +70,12 @@ exports.createOrder = async (req, res) => {
         }
         const price = item.price != null ? item.price : product.price;
         const qty = item.quantity || 1;
+        const selectedSize = getSelectedSizeFromItem(item);
         orderItems.push({
           product: product._id,
           quantity: qty,
           price,
+          selectedSize: selectedSize || null,
         });
         total += price * qty;
       }
@@ -48,11 +89,12 @@ exports.createOrder = async (req, res) => {
         });
       }
       sourceItems = cart.items;
-      for (const item of cart.items) {
-        const product = await Product.findById(item.product._id);
+      for (const it of cart.items) {
+        const item = it.toObject ? it.toObject() : it;
+        const product = await Product.findById(item.product?._id || item.product);
         if (!product) {
           return res.status(404).json({
-            message: `Product ${item.product.name} not found`,
+            message: `Product ${item.product?.name || "Product"} not found`,
           });
         }
         if (product.stock < item.quantity) {
@@ -60,10 +102,12 @@ exports.createOrder = async (req, res) => {
             message: `Insufficient stock for ${product.name}`,
           });
         }
+        const selectedSize = getSelectedSizeFromItem(item);
         orderItems.push({
-          product: item.product._id,
+          product: item.product?._id || item.product,
           quantity: item.quantity,
           price: item.price,
+          selectedSize: selectedSize || null,
         });
         total += item.price * item.quantity;
       }
@@ -107,7 +151,7 @@ exports.createOrder = async (req, res) => {
 
     return res.status(201).json({
       message: "Order created successfully",
-      data: order,
+      data: orderForResponse(order),
     });
   } catch (error) {
     return res.status(500).json({
@@ -129,7 +173,7 @@ exports.getUserOrders = async (req, res) => {
 
     return res.status(200).json({
       message: "Orders fetched successfully",
-      data: orders,
+      data: orders.map((o) => orderForResponse(o)),
     });
   } catch (error) {
     return res.status(500).json({
@@ -158,7 +202,7 @@ exports.getOrder = async (req, res) => {
 
     return res.status(200).json({
       message: "Order fetched successfully",
-      data: order,
+      data: orderForResponse(order),
     });
   } catch (error) {
     return res.status(500).json({
@@ -196,7 +240,7 @@ exports.updateOrderStatus = async (req, res) => {
 
     return res.status(200).json({
       message: "Order status updated successfully",
-      data: order,
+      data: orderForResponse(order),
     });
   } catch (error) {
     return res.status(500).json({
@@ -224,7 +268,7 @@ exports.getAllOrders = async (req, res) => {
 
     return res.status(200).json({
       message: "Orders fetched successfully",
-      data: orders,
+      data: orders.map((o) => orderForResponse(o)),
     });
   } catch (error) {
     return res.status(500).json({
