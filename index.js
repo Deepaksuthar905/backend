@@ -17,11 +17,9 @@ app.use(express.urlencoded({ extended: true }));
 // Serve uploaded files (e.g. payment screenshots)
 app.use("/uploads", express.static("uploads"));
 
-// DB connection
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/mydb";
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log("MongoDB Connection Error:", err));
+// DB connection – use MONGO_URI from .env (Atlas connection string)
+const connectDB = require("./config/db");
+connectDB();
 
 // Routes
 const categoryRoutes = require("./routes/categoryRoutes");
