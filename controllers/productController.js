@@ -1,8 +1,13 @@
+const path = require("path");
+const fs = require("fs");
+let sharp;
+try { sharp = require("sharp"); } catch (_) { sharp = null; }
 const Product = require("../models/products");
 const Size = require("../models/Size");
 
-// Sizes ko hamesha { name, id, productId } format mein lao
-// Accept: [{ size: "7" }, { size: "8" }] ya [{ name: "7", id: "xxx" }] ya [{ _id: "xxx" }]
+const PRODUCT_IMAGES_DIR = path.join(__dirname, "../uploads/products");
+const COMPRESS = { maxWidth: 1200, maxHeight: 1200, jpegQuality: 85 };
+
 async function normalizeSizes(sizes, productId = null) {
   if (!Array.isArray(sizes) || sizes.length === 0) return sizes;
   const out = [];
@@ -26,7 +31,6 @@ async function normalizeSizes(sizes, productId = null) {
   return out;
 }
 
-// Response mein sizes sirf name dikhane ke liye
 function sizesForResponse(product) {
   if (!product) return product;
   const doc = product.toObject ? product.toObject() : product;
@@ -61,8 +65,67 @@ async function saveSizesToSizeTable(product) {
   }
 }
 
+function getFileBuffers(req) {
+  const list = [];
+  if (!req.files) return list;
+  const fields = ["images", "image", "file", "files"];
+  for (const field of fields) {
+    const f = req.files[field];
+    if (!f) continue;
+    const arr = Array.isArray(f) ? f : [f];
+    for (const file of arr) {
+      if (file && (file.buffer || file.path)) list.push(file);
+    }
+  }
+  return list;
+}
+
+
+async function compressAndSaveProductImages(req) {
+  const files = getFileBuffers(req);
+  if (files.length === 0) return [];
+  if (!fs.existsSync(PRODUCT_IMAGES_DIR)) fs.mkdirSync(PRODUCT_IMAGES_DIR, { recursive: true });
+  const paths = [];
+  const { maxWidth, maxHeight, jpegQuality } = COMPRESS;
+  for (const file of files) {
+    const input = file.buffer || (file.path && fs.readFileSync(file.path));
+    if (!input) continue;
+    const base = Date.now() + "_" + Math.random().toString(36).slice(2);
+    const ext = (file.originalname && path.extname(file.originalname)) || ".jpg";
+    const name = sharp ? base + ".jpg" : base + "." + (ext.replace(/^\./, "") || "jpg").toLowerCase();
+    const outPath = path.join(PRODUCT_IMAGES_DIR, name);
+    const urlPath = "/uploads/products/" + name;
+    if (sharp) {
+      try {
+        await sharp(input)
+          .resize(maxWidth, maxHeight, { fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: jpegQuality })
+          .toFile(outPath);
+        paths.push(urlPath);
+      } catch (err) {
+        try {
+          fs.writeFileSync(outPath, input);
+          paths.push(urlPath);
+        } catch (e) {
+          console.warn("Image save failed:", e.message);
+        }
+      }
+    } else {
+      try {
+        fs.writeFileSync(outPath, input);
+        paths.push(urlPath);
+      } catch (e) {
+        console.warn("Image save failed:", e.message);
+      }
+    }
+  }
+  return paths;
+}
+
 exports.createProduct = async (req, res) => {
   try {
+    const uploaded = await compressAndSaveProductImages(req);
+    if (uploaded.length) req.body.images = uploaded;
     if (req.body.sizes && req.body.sizes.length) {
       req.body.sizes = await normalizeSizes(req.body.sizes);
     }
@@ -121,6 +184,11 @@ exports.deleteProduct = async (req, res) => {
 
 exports.updateProduct = async (req, res) => {
   try {
+    const uploaded = await compressAndSaveProductImages(req);
+    if (uploaded.length) {
+      const existing = (req.body.images && Array.isArray(req.body.images)) ? req.body.images : [];
+      req.body.images = [...existing, ...uploaded];
+    }
     if (req.body.sizes && req.body.sizes.length) {
       req.body.sizes = await normalizeSizes(req.body.sizes, req.params.id);
     }
