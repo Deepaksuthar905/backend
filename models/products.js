@@ -25,6 +25,20 @@ const ProductSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Parent listing product (null = root). Child rows = color/SKU variants (Flipkart-style).
+    parentProduct: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      default: null,
+    },
+
+    // Optional color label for variant rows (e.g. "Navy", "Red").
+    color: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     description: {
       type: String,
     },
@@ -37,9 +51,11 @@ const ProductSchema = new mongoose.Schema(
 
     sizes: [
       {
-        name: { type: String, default: "" }, 
-        id: { type: String, required: true },  
-        productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", default: null },  // ye size kis product ki
+        name: { type: String, default: "" },
+        id: { type: String, required: true },
+        productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", default: null },
+        price: { type: Number },
+        stock: { type: Number },
       }
     ],
 

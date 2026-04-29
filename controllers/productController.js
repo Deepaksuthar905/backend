@@ -8,6 +8,23 @@ const Size = require("../models/Size");
 const PRODUCT_IMAGES_DIR = path.join(__dirname, "../uploads/products");
 const COMPRESS = { maxWidth: 1200, maxHeight: 1200, jpegQuality: 85 };
 
+function parseJsonArrayMaybe(input) {
+  if (Array.isArray(input)) return input;
+  if (typeof input !== "string") return null;
+  const s = input.trim();
+  if (!s) return null;
+  // Common when request is multipart/form-data: req.body.sizes = "[{...}]"
+  if (s.startsWith("[") && s.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(s);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+
 async function normalizeSizes(sizes, productId = null) {
   if (!Array.isArray(sizes) || sizes.length === 0) return sizes;
   const out = [];
@@ -22,11 +39,14 @@ async function normalizeSizes(sizes, productId = null) {
     if (!id) id = name;  // sirf { size: "7" } bheja to id = "7"
     if (name === "" && !id) continue;
     if (!name) name = String(id);
-    out.push({
+    const row = {
       name: String(name),
       id: String(id),
       productId: productId || item.productId || null,
-    });
+    };
+    if (item.price != null && item.price !== "") row.price = Number(item.price);
+    if (item.stock != null && item.stock !== "") row.stock = Number(item.stock);
+    out.push(row);
   }
   return out;
 }
@@ -35,7 +55,15 @@ function sizesForResponse(product) {
   if (!product) return product;
   const doc = product.toObject ? product.toObject() : product;
   if (Array.isArray(doc.sizes)) {
-    doc.sizes = doc.sizes.map((s) => ({ name: s.name }));
+    doc.sizes = doc.sizes.map((s) => {
+      const o = { name: s.name, id: s.id };
+      if (s.price != null && !Number.isNaN(Number(s.price))) o.price = Number(s.price);
+      if (s.stock != null && !Number.isNaN(Number(s.stock))) o.stock = Number(s.stock);
+      return o;
+    });
+  }
+  if (doc.parentProduct && typeof doc.parentProduct === "object" && doc.parentProduct._id) {
+    doc.parentProduct = doc.parentProduct._id;
   }
   return doc;
 }
@@ -44,6 +72,39 @@ function productsForResponse(products) {
   if (!Array.isArray(products)) return sizesForResponse(products);
   return products.map((p) => sizesForResponse(p));
 }
+
+function rootProductFilter() {
+  return { $or: [{ parentProduct: null }, { parentProduct: { $exists: false } }] };
+}
+
+async function collectPricesFromProductDoc(p) {
+  const list = [p.price];
+  if (p.sizes && p.sizes.length) {
+    for (const s of p.sizes) {
+      if (s.price != null && !Number.isNaN(Number(s.price))) list.push(Number(s.price));
+    }
+  }
+  return list;
+}
+
+async function enrichStoreProductRow(parent) {
+  const children = await Product.find({ parentProduct: parent._id }).lean();
+  let allPrices = await collectPricesFromProductDoc(parent.toObject ? parent.toObject() : parent);
+  for (const c of children) {
+    allPrices = allPrices.concat(await collectPricesFromProductDoc(c));
+  }
+  allPrices = allPrices.filter((n) => n != null && !Number.isNaN(n));
+  const min = allPrices.length ? Math.min(...allPrices) : parent.price;
+  const max = allPrices.length ? Math.max(...allPrices) : parent.price;
+  const doc = sizesForResponse(parent);
+  doc.variantCount = children.length;
+  doc.priceMin = min;
+  doc.priceMax = max;
+  return doc;
+}
+
+exports.enrichStoreProductRow = enrichStoreProductRow;
+exports.rootProductFilter = rootProductFilter;
 
 // Size table (collection) mein bhi save karo – product ke sizes ke hisaab se
 async function saveSizesToSizeTable(product) {
@@ -126,8 +187,25 @@ exports.createProduct = async (req, res) => {
   try {
     const uploaded = await compressAndSaveProductImages(req);
     if (uploaded.length) req.body.images = uploaded;
-    if (req.body.sizes && req.body.sizes.length) {
-      req.body.sizes = await normalizeSizes(req.body.sizes);
+    if (req.body.parentProduct) {
+      const par = await Product.findById(req.body.parentProduct).lean();
+      if (!par) {
+        return res.status(400).json({ message: "Parent product not found", error: "invalid parentProduct" });
+      }
+      if (!req.body.category) req.body.category = par.category;
+      if (req.body.subcategory == null && par.subcategory) req.body.subcategory = par.subcategory;
+    }
+    // Multer (multipart/form-data) may give nested arrays as JSON strings.
+    if (typeof req.body.images === "string") {
+      const parsed = parseJsonArrayMaybe(req.body.images);
+      if (parsed) req.body.images = parsed;
+    }
+    if (req.body.sizes) {
+      const parsed = parseJsonArrayMaybe(req.body.sizes);
+      if (parsed) req.body.sizes = parsed;
+      if (Array.isArray(req.body.sizes) && req.body.sizes.length) {
+        req.body.sizes = await normalizeSizes(req.body.sizes);
+      }
     }
     const product = await Product.create(req.body);
     if (product.sizes && product.sizes.length) {
@@ -150,7 +228,21 @@ exports.createProduct = async (req, res) => {
 
 exports.getProducts = async (req, res) => {
   try {
-    const products = await Product.find().populate("category").populate("subcategory");
+    const group = req.query.groupVariants === "1" || req.query.groupVariants === "true";
+    if (group) {
+      const parents = await Product.find(rootProductFilter())
+        .populate("category")
+        .populate("subcategory");
+      const data = await Promise.all(parents.map((p) => enrichStoreProductRow(p)));
+      return res.status(200).json({
+        message: "Products fetched successfully",
+        data,
+      });
+    }
+    const products = await Product.find()
+      .populate("category")
+      .populate("subcategory")
+      .populate("parentProduct");
     return res.status(200).json({
       message: "Products fetched successfully",
       data: productsForResponse(products),
@@ -189,16 +281,34 @@ exports.updateProduct = async (req, res) => {
       const existing = (req.body.images && Array.isArray(req.body.images)) ? req.body.images : [];
       req.body.images = [...existing, ...uploaded];
     }
-    if (req.body.sizes && req.body.sizes.length) {
-      req.body.sizes = await normalizeSizes(req.body.sizes, req.params.id);
+    // Multer (multipart/form-data) may give nested arrays as JSON strings.
+    if (typeof req.body.images === "string") {
+      const parsed = parseJsonArrayMaybe(req.body.images);
+      if (parsed) req.body.images = parsed;
     }
-    const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true })
-      .populate("category").populate("subcategory");
+    if (req.body.sizes) {
+      const parsed = parseJsonArrayMaybe(req.body.sizes);
+      if (parsed) req.body.sizes = parsed;
+      if (Array.isArray(req.body.sizes) && req.body.sizes.length) {
+        req.body.sizes = await normalizeSizes(req.body.sizes, req.params.id);
+      }
+    }
+    const product = await Product.findById(req.params.id);
     if (!product) {
       return res.status(404).json({ 
         message: "Product not found", 
       });
     }
+    Object.keys(req.body || {}).forEach((k) => {
+      product[k] = req.body[k];
+    });
+    if (req.body.sizes) {
+      // Explicitly mark nested size matrix dirty so price/stock edits persist.
+      product.markModified("sizes");
+    }
+    await product.save();
+    await product.populate("category");
+    await product.populate("subcategory");
     if (product.sizes && product.sizes.length) {
       await saveSizesToSizeTable(product);
     }
@@ -216,18 +326,60 @@ exports.updateProduct = async (req, res) => {
 
 exports.getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id).populate("category").populate("subcategory");
+    const product = await Product.findById(req.params.id)
+      .populate("category")
+      .populate("subcategory")
+      .populate("parentProduct");
     if (!product) {
       return res.status(404).json({
         message: "Product not found",
       });
     }
+    const parentRef = product.parentProduct;
+    const parentId = parentRef ? (parentRef._id || parentRef) : null;
+    const root = parentId
+      ? await Product.findById(parentId).populate("category").populate("subcategory")
+      : product;
+    if (!root) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const children = await Product.find({ parentProduct: root._id })
+      .populate("category")
+      .populate("subcategory")
+      .sort({ color: 1, name: 1 });
+
+    const colorVariants = children.map((c) => sizesForResponse(c));
+    const base = sizesForResponse(product);
+    const rootPlain = sizesForResponse(root);
+
+    const allPrices = [];
+    for (const v of [rootPlain, ...colorVariants]) {
+      if (v.price != null) allPrices.push(v.price);
+      if (v.sizes && v.sizes.length) {
+        for (const s of v.sizes) {
+          if (s.price != null) allPrices.push(s.price);
+        }
+      }
+    }
+    const valid = allPrices.filter((n) => n != null && !Number.isNaN(n));
+    const priceMin = valid.length ? Math.min(...valid) : base.price;
+    const priceMax = valid.length ? Math.max(...valid) : base.price;
+
     return res.status(200).json({
       message: "Product fetched successfully",
-      data: sizesForResponse(product),
+      data: {
+        ...base,
+        root: rootPlain,
+        listingRootId: String(root._id),
+        isVariant: !!parentId,
+        colorVariants,
+        variantCount: colorVariants.length,
+        priceMin,
+        priceMax,
+      },
     });
-  }
-  catch (error) {
+  } catch (error) {
     return res.status(500).json({
       message: "internal server error",
       error: error.message,
@@ -237,18 +389,29 @@ exports.getProductById = async (req, res) => {
 
 exports.getProductsByCategory = async (req, res) => {
   try {
-    const products = await Product.find({ category: req.params.categoryId }).populate("category").populate("subcategory");
+    const group = req.query.groupVariants === "1" || req.query.groupVariants === "true";
+    const rootOnly = rootProductFilter();
+    const q = group
+      ? { category: req.params.categoryId, ...rootOnly }
+      : { category: req.params.categoryId };
+    const products = await Product.find(q).populate("category").populate("subcategory").populate("parentProduct");
     if (products.length === 0) {
       return res.status(404).json({
         message: "Products not found for this category",
+      });
+    }
+    if (group) {
+      const data = await Promise.all(products.map((p) => enrichStoreProductRow(p)));
+      return res.status(200).json({
+        message: "Products fetched successfully",
+        data,
       });
     }
     return res.status(200).json({
       message: "Products fetched successfully",
       data: productsForResponse(products),
     });
-  }
-  catch (error) {
+  } catch (error) {
     return res.status(500).json({
       message: "internal server error",
       error: error.message,
@@ -258,10 +421,22 @@ exports.getProductsByCategory = async (req, res) => {
 
 exports.getProductsBySubcategory = async (req, res) => {
   try {
-    const products = await Product.find({ subcategory: req.params.subcategoryId }).populate("category").populate("subcategory");
+    const group = req.query.groupVariants === "1" || req.query.groupVariants === "true";
+    const rootOnly = rootProductFilter();
+    const q = group
+      ? { subcategory: req.params.subcategoryId, ...rootOnly }
+      : { subcategory: req.params.subcategoryId };
+    const products = await Product.find(q).populate("category").populate("subcategory").populate("parentProduct");
     if (products.length === 0) {
       return res.status(404).json({
         message: "Products not found for this subcategory",
+      });
+    }
+    if (group) {
+      const data = await Promise.all(products.map((p) => enrichStoreProductRow(p)));
+      return res.status(200).json({
+        message: "Products fetched successfully",
+        data,
       });
     }
     return res.status(200).json({

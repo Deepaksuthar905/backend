@@ -1,6 +1,7 @@
 const Subcategory = require("../models/subcategory");
 const Category = require("../models/Category");
 const Product = require("../models/products");
+const { enrichStoreProductRow, rootProductFilter } = require("./productController");
 
 exports.createSubcategory = async (req, res) => {
   try {
@@ -74,10 +75,17 @@ exports.getSubcategoryById = async (req, res) => {
     if (!subcategory) {
       return res.status(404).json({ message: "Subcategory not found" });
     }
-    // All products that have this subcategory
-    const products = await Product.find({ subcategory: req.params.id })
+    const group = req.query.groupVariants === "1" || req.query.groupVariants === "true";
+    const q = group
+      ? { subcategory: req.params.id, ...rootProductFilter }
+      : { subcategory: req.params.id };
+    const rawProducts = await Product.find(q)
       .populate("category")
-      .populate("subcategory");
+      .populate("subcategory")
+      .populate("parentProduct");
+    const products = group
+      ? await Promise.all(rawProducts.map((p) => enrichStoreProductRow(p)))
+      : rawProducts;
     return res.status(200).json({
       message: "Subcategory fetched successfully",
       data: subcategory,

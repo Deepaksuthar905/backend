@@ -10,7 +10,7 @@ function cartForResponse(cart) {
     doc.items = doc.items.map((item) => {
       const selected = item.selectedSize;
       if (item.product && selected != null && selected !== "") {
-        item.product = { ...item.product, sizes: [{ name: String(selected) }] };
+        item.product = { ...item.product, sizes: [{ name: String(selected), price: item.price }] };
       }
       return item;
     });
@@ -52,6 +52,21 @@ function getSelectedSizeFromBody(body) {
   return String(raw).trim() || null;
 }
 
+function getSizeKey(size) {
+  if (!size) return "";
+  return String(size.id || size.value || size.name || size.label || "").trim();
+}
+
+function findSelectedSizeRow(product, selectedSize) {
+  if (!product || !Array.isArray(product.sizes) || !selectedSize) return null;
+  const key = String(selectedSize).trim().toLowerCase();
+  return (
+    product.sizes.find((s) => getSizeKey(s).toLowerCase() === key) ||
+    product.sizes.find((s) => String(s.name || "").trim().toLowerCase() === key) ||
+    null
+  );
+}
+
 exports.addToCart = async (req, res) => {
   try {
     const userId = req.user?.id || req.body?.userId || req.query?.userId || "000000000000000000000000";
@@ -70,9 +85,20 @@ exports.addToCart = async (req, res) => {
       });
     }
 
-    if (product.stock < quantity) {
+    const sizeStr = getSelectedSizeFromBody(req.body);
+    const selectedSizeRow = findSelectedSizeRow(product, sizeStr);
+    const unitPrice =
+      selectedSizeRow && selectedSizeRow.price != null && !Number.isNaN(Number(selectedSizeRow.price))
+        ? Number(selectedSizeRow.price)
+        : Number(product.price);
+    const availableStock =
+      selectedSizeRow && selectedSizeRow.stock != null && !Number.isNaN(Number(selectedSizeRow.stock))
+        ? Number(selectedSizeRow.stock)
+        : Number(product.stock);
+
+    if (availableStock < quantity) {
       return res.status(400).json({
-        message: "Insufficient stock",
+        message: sizeStr ? `Insufficient stock for size ${sizeStr}` : "Insufficient stock",
       });
     }
 
@@ -82,7 +108,6 @@ exports.addToCart = async (req, res) => {
       cart = await Cart.create({ user: userId, items: [], total: 0 });
     }
 
-    const sizeStr = getSelectedSizeFromBody(req.body);
     const existingItemIndex = cart.items.findIndex((item) => {
       const sameProduct = item.product.toString() === String(productId);
       const sameSize = (item.selectedSize || "") === (sizeStr || "");
@@ -90,12 +115,19 @@ exports.addToCart = async (req, res) => {
     });
 
     if (existingItemIndex > -1) {
-      cart.items[existingItemIndex].quantity += quantity;
+      const nextQty = cart.items[existingItemIndex].quantity + quantity;
+      if (availableStock < nextQty) {
+        return res.status(400).json({
+          message: sizeStr ? `Insufficient stock for size ${sizeStr}` : "Insufficient stock",
+        });
+      }
+      cart.items[existingItemIndex].quantity = nextQty;
+      cart.items[existingItemIndex].price = unitPrice;
     } else {
       cart.items.push({
         product: productId,
         quantity: quantity,
-        price: product.price,
+        price: unitPrice,
         selectedSize: sizeStr || undefined,
       });
     }
@@ -125,11 +157,11 @@ exports.updateCartItem = async (req, res) => {
   try {
     // Temporary: Use userId from query/body or default to a dummy user
     const userId = req.user?.id || req.body?.userId || req.query?.userId || "000000000000000000000000";
-    const { productId, quantity } = req.body;
+    const { productId, quantity, itemId, selectedSize } = req.body;
 
-    if (!productId || !quantity || quantity < 1) {
+    if (!quantity || quantity < 1 || (!itemId && !productId)) {
       return res.status(400).json({
-        message: "Product ID and valid quantity are required",
+        message: "Valid quantity and itemId or productId are required",
       });
     }
 
@@ -140,9 +172,16 @@ exports.updateCartItem = async (req, res) => {
       });
     }
 
-    const itemIndex = cart.items.findIndex(
-      (item) => item.product.toString() === productId
-    );
+    const itemIndex = cart.items.findIndex((item) => {
+      if (itemId) return String(item._id) === String(itemId);
+      if (selectedSize != null) {
+        return (
+          item.product.toString() === String(productId) &&
+          String(item.selectedSize || "") === String(selectedSize || "")
+        );
+      }
+      return item.product.toString() === String(productId);
+    });
 
     if (itemIndex === -1) {
       return res.status(404).json({
@@ -151,10 +190,23 @@ exports.updateCartItem = async (req, res) => {
     }
 
     // Check stock
-    const product = await Product.findById(productId);
-    if (product.stock < quantity) {
+    const itemDoc = cart.items[itemIndex];
+    const product = await Product.findById(itemDoc.product);
+    if (!product) {
+      return res.status(404).json({
+        message: "Product not found",
+      });
+    }
+    const selectedSizeRow = findSelectedSizeRow(product, itemDoc.selectedSize);
+    const availableStock =
+      selectedSizeRow && selectedSizeRow.stock != null && !Number.isNaN(Number(selectedSizeRow.stock))
+        ? Number(selectedSizeRow.stock)
+        : Number(product.stock);
+    if (availableStock < quantity) {
       return res.status(400).json({
-        message: "Insufficient stock",
+        message: itemDoc.selectedSize
+          ? `Insufficient stock for size ${itemDoc.selectedSize}`
+          : "Insufficient stock",
       });
     }
 

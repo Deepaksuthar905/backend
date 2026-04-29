@@ -1,10 +1,14 @@
 const Product = require("../models/products");
 const Category = require("../models/Category");
 
+const rootProductFilter = {
+  $or: [{ parentProduct: null }, { parentProduct: { $exists: false } }],
+};
+
 // Search products and categories
 exports.search = async (req, res) => {
   try {
-    const { q } = req.query; // search query
+    const { q, includeVariants } = req.query; // search query
 
     if (!q || q.trim() === "") {
       return res.status(400).json({
@@ -13,17 +17,21 @@ exports.search = async (req, res) => {
     }
 
     const searchQuery = q.trim();
+    const onlyRoots = includeVariants !== "1" && includeVariants !== "true";
 
     // Create regex for case-insensitive search
     const searchRegex = new RegExp(searchQuery, "i");
 
-    // Search in products (name, description)
-    const products = await Product.find({
+    // Search in products (name, description) — default: root products only (no duplicate variant rows)
+    const nameDesc = {
       $or: [
         { name: searchRegex },
         { description: searchRegex },
       ],
-    }).populate("category");
+    };
+    const productQuery = onlyRoots ? { $and: [nameDesc, rootProductFilter] } : nameDesc;
+
+    const products = await Product.find(productQuery).populate("category");
 
     // Search in categories (name)
     const categories = await Category.find({
@@ -32,9 +40,11 @@ exports.search = async (req, res) => {
 
     // Get products from matching categories
     const categoryIds = categories.map((cat) => cat._id);
-    const productsByCategory = await Product.find({
-      category: { $in: categoryIds },
-    }).populate("category");
+    const byCatQuery =
+      onlyRoots
+        ? { $and: [{ category: { $in: categoryIds } }, rootProductFilter] }
+        : { category: { $in: categoryIds } };
+    const productsByCategory = await Product.find(byCatQuery).populate("category");
 
     // Merge and remove duplicates from products
     const allProducts = [...products];
@@ -76,16 +86,21 @@ exports.searchProducts = async (req, res) => {
     const searchRegex = new RegExp(q.trim(), "i");
 
     // Build filter query
-    let filter = {
+    const { includeVariants } = req.query;
+    const onlyRoots = includeVariants !== "1" && includeVariants !== "true";
+    const nameDescFilter = {
       $or: [
         { name: searchRegex },
         { description: searchRegex },
       ],
     };
+    let filter = onlyRoots ? { $and: [nameDescFilter, rootProductFilter] } : nameDescFilter;
 
     // Filter by category if provided
     if (category) {
-      filter.category = category;
+      filter = onlyRoots
+        ? { $and: [...filter.$and, { category }] }
+        : { ...nameDescFilter, category };
     }
 
     // Filter by price range
